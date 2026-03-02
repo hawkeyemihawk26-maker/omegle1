@@ -1,0 +1,5 @@
+{
+  "name": "OmegleClone",
+  "description": "A real-time text chat application that pairs users based on shared interests and gender preferences using Supabase.",
+  "requestFramePermissions": []
+}

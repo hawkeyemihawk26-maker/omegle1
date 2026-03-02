@@ -1,0 +1,13 @@
+services:
+  # The Frontend (React Website)
+  - type: static
+    name: omegle-clone-frontend
+    env: static
+    rootDir: .
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./dist
+    # SPA Rewrite rule (Critical for React Router/Navigation)
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

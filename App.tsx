@@ -1,0 +1,286 @@
+import { useEffect, useState, useRef } from 'react';
+import { Header } from './components/Header';
+import { Landing } from './components/Landing';
+import { ChatRoom } from './components/ChatRoom';
+import { 
+  joinQueue, 
+  leaveQueue, 
+  findAndClaimMatch, 
+  subscribeToMatches, 
+  subscribeToMessages, 
+  sendMessage, 
+  endMatch,
+  subscribeToMatchStatus,
+  Match
+} from './services/supabaseService';
+import { supabase } from './supabaseClient';
+import { UserPreferences, ChatState, Message, PartnerData } from './types';
+import { Loader2 } from 'lucide-react';
+import { v4 as uuidv4 } from 'uuid';
+
+function App() {
+  const [appState, setAppState] = useState<ChatState>('landing');
+  const [isConnected, setIsConnected] = useState(true); // Supabase is "always connected" via REST/Realtime
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [partner, setPartner] = useState<PartnerData | null>(null);
+  const [onlineCount, setOnlineCount] = useState(0);
+  const [isPartnerDisconnected, setIsPartnerDisconnected] = useState(false);
+  const userPreferences = useRef<UserPreferences | null>(null);
+  
+  // Supabase specific state
+  const [userId] = useState(uuidv4());
+  const [currentMatch, setCurrentMatch] = useState<Match | null>(null);
+  const matchChannelRef = useRef<any>(null);
+  const searchIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Initialize Presence for Online Count
+  useEffect(() => {
+    const channel = supabase.channel('global_presence');
+    
+    channel
+      .on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState();
+        setOnlineCount(Object.keys(state).length);
+      })
+      .subscribe(async (status) => {
+        setIsConnected(status === 'SUBSCRIBED');
+        if (status === 'SUBSCRIBED') {
+          await channel.track({ user_id: userId, online_at: new Date().toISOString() });
+        }
+      });
+
+    return () => {
+      channel.unsubscribe();
+    };
+  }, [userId]);
+
+  // Handle Match Found (via Subscription or Polling)
+  const handleMatchFound = async (match: Match) => {
+    // Clear search interval
+    if (searchIntervalRef.current) {
+      clearInterval(searchIntervalRef.current);
+      searchIntervalRef.current = null;
+    }
+
+    // Determine if I am host or peer
+    const isHost = match.host_id === userId;
+    const partnerId = isHost ? match.peer_id : match.host_id;
+
+    setCurrentMatch(match);
+    setPartner({
+      socketId: partnerId,
+      displayName: 'Stranger', // We don't store names in DB for privacy, just IDs
+      interests: [], // We could store interests in the match/queue table if needed
+      gender: 'Unknown'
+    });
+    setAppState('chatting');
+    setMessages([]);
+    setIsPartnerDisconnected(false);
+
+    // Subscribe to messages in the room
+    const channel = subscribeToMessages(match.id, (payload: any) => {
+      if (payload.senderId !== userId) {
+        setMessages(prev => [
+          ...prev, 
+          { 
+            id: uuidv4(), 
+            text: payload.text, 
+            sender: 'stranger', 
+            timestamp: Date.now() 
+          }
+        ]);
+      }
+    });
+    matchChannelRef.current = channel;
+
+    // Subscribe to match status (for disconnection)
+    subscribeToMatchStatus(match.id, () => {
+      setIsPartnerDisconnected(true);
+      setMessages(prev => [
+        ...prev,
+        {
+          id: uuidv4(),
+          text: 'Stranger has left the chat.',
+          sender: 'system',
+          timestamp: Date.now()
+        }
+      ]);
+      // Cleanup channel
+      if (matchChannelRef.current) {
+        supabase.removeChannel(matchChannelRef.current);
+        matchChannelRef.current = null;
+      }
+    });
+  };
+
+  // Subscribe to being matched
+  useEffect(() => {
+    const subscription = subscribeToMatches(userId, (match) => {
+      console.log('Match received via subscription:', match);
+      handleMatchFound(match);
+    });
+
+    return () => {
+      supabase.removeChannel(subscription);
+    };
+  }, [userId]);
+
+  const handleStartSearch = async (prefs: UserPreferences) => {
+    userPreferences.current = prefs;
+    setAppState('searching');
+    setIsPartnerDisconnected(false);
+    setMessages([]);
+    setPartner(null);
+    setCurrentMatch(null);
+
+    // 1. Join Queue
+    await joinQueue(userId, prefs.interests);
+
+    // 2. Start Polling for Matches (Active Search)
+    if (searchIntervalRef.current) clearInterval(searchIntervalRef.current);
+    
+    searchIntervalRef.current = setInterval(async () => {
+      const match = await findAndClaimMatch(userId, prefs.interests);
+      if (match) {
+        console.log('Match found via active search:', match);
+        handleMatchFound(match);
+      }
+    }, 2000); // Check every 2 seconds
+  };
+
+  const handleSendMessage = async (text: string) => {
+    if (!text.trim() || !currentMatch || !matchChannelRef.current) return;
+    
+    // Send via Realtime
+    await sendMessage(matchChannelRef.current, {
+      text,
+      senderId: userId
+    });
+
+    // Optimistically add to UI
+    setMessages(prev => [
+      ...prev,
+      {
+        id: uuidv4(),
+        text: text,
+        sender: 'me',
+        timestamp: Date.now()
+      }
+    ]);
+  };
+
+  const handleNext = async () => {
+    // End current match if exists
+    if (currentMatch) {
+      await endMatch(currentMatch.id);
+      if (matchChannelRef.current) {
+        supabase.removeChannel(matchChannelRef.current);
+        matchChannelRef.current = null;
+      }
+    }
+    
+    // Stop searching if searching
+    if (searchIntervalRef.current) {
+      clearInterval(searchIntervalRef.current);
+      searchIntervalRef.current = null;
+      await leaveQueue(userId);
+    }
+
+    // Restart search
+    if (userPreferences.current) {
+      handleStartSearch(userPreferences.current);
+    } else {
+      setAppState('landing');
+    }
+  };
+
+  const handleStop = async () => {
+    // End current match if exists
+    if (currentMatch) {
+      await endMatch(currentMatch.id);
+      if (matchChannelRef.current) {
+        supabase.removeChannel(matchChannelRef.current);
+        matchChannelRef.current = null;
+      }
+    }
+
+    // Stop searching if searching
+    if (searchIntervalRef.current) {
+      clearInterval(searchIntervalRef.current);
+      searchIntervalRef.current = null;
+      await leaveQueue(userId);
+    }
+
+    setAppState('landing');
+    setPartner(null);
+    setMessages([]);
+    setIsPartnerDisconnected(false);
+    setCurrentMatch(null);
+  };
+
+  return (
+    <div className="min-h-screen relative font-sans text-slate-100">
+      
+      {/* Background Ambience */}
+      <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
+        <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-primary/20 rounded-full blur-[100px] animate-blob"></div>
+        <div className="absolute top-[20%] right-[-10%] w-[400px] h-[400px] bg-secondary/20 rounded-full blur-[100px] animate-blob animation-delay-2000"></div>
+        <div className="absolute bottom-[-10%] left-[20%] w-[600px] h-[600px] bg-accent/10 rounded-full blur-[120px] animate-blob animation-delay-4000"></div>
+      </div>
+
+      <div className="relative z-10 flex flex-col min-h-screen">
+        <Header isConnected={isConnected} onlineCount={onlineCount} />
+
+        <main className="flex-1 flex flex-col">
+          {appState === 'landing' && (
+            <Landing 
+              onStart={handleStartSearch} 
+              isConnecting={false} 
+              isConnected={isConnected}
+            />
+          )}
+
+          {appState === 'searching' && (
+            <div className="flex-1 flex flex-col items-center justify-center p-4">
+              <div className="relative mb-12">
+                <div className="absolute inset-0 bg-primary/20 rounded-full blur-xl animate-pulse-glow"></div>
+                <div className="relative w-24 h-24 glass-panel rounded-full flex items-center justify-center border border-primary/30">
+                  <Loader2 className="w-10 h-10 text-primary animate-spin" />
+                </div>
+                {/* Radar Ripples */}
+                <div className="absolute inset-0 rounded-full border border-primary/20 animate-ping opacity-20"></div>
+              </div>
+              
+              <h2 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary mb-3 animate-fade-in">
+                Scanning Frequency...
+              </h2>
+              <p className="text-slate-400 max-w-md text-center animate-slide-up mb-6">
+                Looking for someone interested in <span className="text-slate-200 font-medium">{userPreferences.current?.interests.join(', ') || 'anything'}</span>
+              </p>
+              
+              <button 
+                onClick={handleStop}
+                className="px-6 py-2 rounded-full border border-white/10 hover:bg-white/5 text-slate-400 hover:text-white transition-colors text-sm font-medium"
+              >
+                Cancel Search
+              </button>
+            </div>
+          )}
+
+          {appState === 'chatting' && partner && (
+            <ChatRoom 
+              partner={partner}
+              messages={messages}
+              onSendMessage={handleSendMessage}
+              onNext={handleNext}
+              onStop={handleStop}
+              isPartnerDisconnected={isPartnerDisconnected}
+            />
+          )}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+export default App;
