@@ -9,6 +9,8 @@ interface ChatRoomProps {
   onNext: () => void;
   onStop: () => void;
   isPartnerDisconnected: boolean;
+  isPartnerTyping?: boolean;
+  onTyping?: (isTyping: boolean) => void;
 }
 
 export const ChatRoom: React.FC<ChatRoomProps> = ({ 
@@ -17,11 +19,14 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
   onSendMessage, 
   onNext, 
   onStop,
-  isPartnerDisconnected
+  isPartnerDisconnected,
+  isPartnerTyping = false,
+  onTyping
 }) => {
   const [inputText, setInputText] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -29,7 +34,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages, isPartnerTyping]);
 
   // Auto-focus input when partner is connected
   useEffect(() => {
@@ -38,11 +43,27 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
     }
   }, [isPartnerDisconnected]);
 
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setInputText(e.target.value);
+    
+    if (onTyping) {
+      onTyping(true);
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => {
+        onTyping(false);
+      }, 2000);
+    }
+  };
+
   const handleSend = (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!inputText.trim() || isPartnerDisconnected) return;
     onSendMessage(inputText.trim());
     setInputText('');
+    if (onTyping) {
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      onTyping(false);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -179,6 +200,21 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
              );
           })}
           
+          {isPartnerTyping && !isPartnerDisconnected && (
+            <div className="flex w-full justify-start animate-fade-in">
+              <div className="flex max-w-[85%] sm:max-w-[70%] flex-row items-end gap-2">
+                 <div className="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center mb-1 bg-slate-700">
+                    <User className="w-3 h-3 text-slate-400" />
+                 </div>
+                 <div className="relative px-5 py-4 bg-[#1e293b]/80 border border-white/5 rounded-2xl rounded-tl-sm flex items-center gap-1.5">
+                    <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                    <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                    <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                 </div>
+              </div>
+            </div>
+          )}
+          
           {isPartnerDisconnected && (
             <div className="flex flex-col items-center justify-center gap-6 py-12 animate-fade-in opacity-0" style={{ animationFillMode: 'forwards', animationDelay: '0.3s', animationName: 'fadeIn' }}>
                <div className="relative">
@@ -213,7 +249,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
               ref={inputRef}
               type="text"
               value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
+              onChange={handleInputChange}
               onKeyDown={handleKeyDown}
               disabled={isPartnerDisconnected}
               placeholder={isPartnerDisconnected ? "Conversation ended." : "Type your message..."}

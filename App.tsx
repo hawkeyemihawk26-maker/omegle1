@@ -28,7 +28,13 @@ function App() {
   const userPreferences = useRef<UserPreferences | null>(null);
   
   // Supabase specific state
-  const [userId] = useState(uuidv4());
+  const [userId] = useState(() => {
+    const saved = sessionStorage.getItem('omegle_clone_user_id');
+    if (saved) return saved;
+    const newId = uuidv4();
+    sessionStorage.setItem('omegle_clone_user_id', newId);
+    return newId;
+  });
   const [currentMatch, setCurrentMatch] = useState<Match | null>(null);
   const matchChannelRef = useRef<any>(null);
   const searchIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -54,6 +60,21 @@ function App() {
     };
   }, [userId]);
 
+  // Cleanup on window close/refresh
+  useEffect(() => {
+    const handleUnload = () => {
+      leaveQueue(userId);
+      if (currentMatch) {
+        endMatch(currentMatch.id);
+      }
+    };
+    window.addEventListener('beforeunload', handleUnload);
+    return () => window.removeEventListener('beforeunload', handleUnload);
+  }, [userId, currentMatch]);
+
+  const [isPartnerTyping, setIsPartnerTyping] = useState(false);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   // Handle Match Found (via Subscription or Polling)
   const handleMatchFound = async (match: Match) => {
     // Clear search interval
@@ -76,6 +97,7 @@ function App() {
     setAppState('chatting');
     setMessages([]);
     setIsPartnerDisconnected(false);
+    setIsPartnerTyping(false);
 
     // Subscribe to messages in the room
     const channel = subscribeToMessages(match.id, (payload: any) => {
@@ -89,6 +111,15 @@ function App() {
             timestamp: Date.now() 
           }
         ]);
+        setIsPartnerTyping(false);
+      }
+    }, (payload: any) => {
+      if (payload.senderId !== userId) {
+        setIsPartnerTyping(payload.isTyping);
+        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+        if (payload.isTyping) {
+          typingTimeoutRef.current = setTimeout(() => setIsPartnerTyping(false), 3000);
+        }
       }
     });
     matchChannelRef.current = channel;
@@ -218,6 +249,14 @@ function App() {
     setCurrentMatch(null);
   };
 
+  const handleTyping = (isTyping: boolean) => {
+    if (matchChannelRef.current) {
+      import('./services/supabaseService').then(({ sendTypingStatus }) => {
+        sendTypingStatus(matchChannelRef.current, isTyping, userId);
+      });
+    }
+  };
+
   return (
     <div className="min-h-screen relative font-sans text-slate-100">
       
@@ -275,6 +314,8 @@ function App() {
               onNext={handleNext}
               onStop={handleStop}
               isPartnerDisconnected={isPartnerDisconnected}
+              isPartnerTyping={isPartnerTyping}
+              onTyping={handleTyping}
             />
           )}
         </main>

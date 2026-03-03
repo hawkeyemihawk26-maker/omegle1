@@ -9,6 +9,9 @@ export interface Match {
 }
 
 export const joinQueue = async (userId: string, interests: string[]) => {
+  // Clear any existing entries for this user first
+  await supabase.from('queue').delete().eq('client_id', userId);
+
   const { error } = await supabase
     .from('queue')
     .insert([{ client_id: userId, interests }]);
@@ -28,11 +31,15 @@ export const leaveQueue = async (userId: string) => {
 };
 
 export const findAndClaimMatch = async (myUserId: string, _myInterests: string[]) => {
-  // 1. Find a candidate (not me)
+  // 1. Find a candidate (not me) who joined in the last 30 seconds
+  const thirtySecondsAgo = new Date(Date.now() - 30000).toISOString();
+  
   const { data: candidates, error } = await supabase
     .from('queue')
     .select('*')
     .neq('client_id', myUserId)
+    .gt('created_at', thirtySecondsAgo)
+    .order('created_at', { ascending: true })
     .limit(1);
 
   if (error || !candidates || candidates.length === 0) {
@@ -112,12 +119,15 @@ export const subscribeToMatches = (userId: string, onMatch: (match: Match) => vo
   return channel;
 };
 
-export const subscribeToMessages = (roomId: string, onMessage: (msg: any) => void) => {
+export const subscribeToMessages = (roomId: string, onMessage: (msg: any) => void, onTyping?: (payload: any) => void) => {
   const channel = supabase.channel(`room:${roomId}`);
   
   channel
     .on('broadcast', { event: 'message' }, (payload) => {
       onMessage(payload.payload);
+    })
+    .on('broadcast', { event: 'typing' }, (payload) => {
+      if (onTyping) onTyping(payload.payload);
     })
     .subscribe((status) => {
       if (status === 'SUBSCRIBED') {
@@ -134,6 +144,15 @@ export const sendMessage = async (channel: any, message: any) => {
     type: 'broadcast',
     event: 'message',
     payload: message,
+  });
+};
+
+export const sendTypingStatus = async (channel: any, isTyping: boolean, senderId: string) => {
+  if (!channel) return;
+  await channel.send({
+    type: 'broadcast',
+    event: 'typing',
+    payload: { isTyping, senderId },
   });
 };
 
