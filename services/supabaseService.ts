@@ -3,18 +3,22 @@ import { supabase } from '../supabaseClient';
 export interface Match {
   id: string;
   host_id: string;
+  host_name: string;
+  host_gender: string;
   peer_id: string;
+  peer_name: string;
+  peer_gender: string;
   created_at: string;
   status: string;
 }
 
-export const joinQueue = async (userId: string, interests: string[]) => {
+export const joinQueue = async (userId: string, interests: string[], displayName: string, gender: string) => {
   // Clear any existing entries for this user first
   await supabase.from('queue').delete().eq('client_id', userId);
 
   const { error } = await supabase
     .from('queue')
-    .insert([{ client_id: userId, interests }]);
+    .insert([{ client_id: userId, interests, display_name: displayName, gender }]);
   
   if (error) console.error('Error joining queue:', error);
   return error;
@@ -30,7 +34,7 @@ export const leaveQueue = async (userId: string) => {
   return error;
 };
 
-export const findAndClaimMatch = async (myUserId: string, _myInterests: string[]) => {
+export const findAndClaimMatch = async (myUserId: string, _myInterests: string[], myDisplayName: string, myGender: string) => {
   // 1. Find a candidate (not me) who joined in the last 30 seconds
   const thirtySecondsAgo = new Date(Date.now() - 30000).toISOString();
   
@@ -67,7 +71,11 @@ export const findAndClaimMatch = async (myUserId: string, _myInterests: string[]
     .insert([
       { 
         host_id: myUserId, 
+        host_name: myDisplayName,
+        host_gender: myGender,
         peer_id: candidate.client_id, 
+        peer_name: candidate.display_name,
+        peer_gender: candidate.gender,
         status: 'active' 
       }
     ])
@@ -84,9 +92,6 @@ export const findAndClaimMatch = async (myUserId: string, _myInterests: string[]
 
 export const subscribeToMatches = (userId: string, onMatch: (match: Match) => void) => {
   // Listen for matches where I am the peer (someone found me)
-  // OR where I am the host (I found someone - though I usually know this from the return value)
-  // But for consistency, let's listen for both.
-  
   const channel = supabase.channel(`user_matches:${userId}`)
     .on(
       'postgres_changes',
@@ -98,19 +103,6 @@ export const subscribeToMatches = (userId: string, onMatch: (match: Match) => vo
       },
       (payload) => {
         console.log('Match found (I am peer):', payload.new);
-        onMatch(payload.new as Match);
-      }
-    )
-    .on(
-      'postgres_changes',
-      {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'matches',
-        filter: `host_id=eq.${userId}`,
-      },
-      (payload) => {
-        console.log('Match created (I am host):', payload.new);
         onMatch(payload.new as Match);
       }
     )

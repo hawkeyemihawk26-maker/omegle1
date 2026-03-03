@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { Message, PartnerData } from '../types';
 import { SkipForward, AlertCircle, User, Zap, StopCircle, CornerDownRight } from 'lucide-react';
+import { soundService } from '../services/soundService';
 
 interface ChatRoomProps {
   partner: PartnerData;
@@ -60,6 +62,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
     if (!inputText.trim() || isPartnerDisconnected) return;
     onSendMessage(inputText.trim());
     setInputText('');
+    soundService.play('message');
     if (onTyping) {
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       onTyping(false);
@@ -77,7 +80,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-80px)] sm:h-[calc(100vh-100px)] mt-16 max-w-5xl mx-auto w-full px-2 sm:px-6 pb-2 sm:pb-6 transition-all duration-500 ease-out animate-fade-in">
+    <div className="flex flex-col h-[calc(100vh-80px)] sm:h-[calc(100vh-100px)] mt-16 max-w-5xl mx-auto w-full px-2 sm:px-6 pb-2 sm:pb-6 transition-all duration-500 ease-out">
       
       {/* Main Glass Container */}
       <div className="flex-1 glass-panel rounded-2xl sm:rounded-[2rem] flex flex-col overflow-hidden shadow-2xl border border-white/10 relative backdrop-blur-xl">
@@ -154,91 +157,120 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
             </span>
           </div>
 
-          {messages.map((msg, index) => {
-             const isSystem = msg.sender === 'system';
-             const isMe = msg.sender === 'me';
-             const isFirstInGroup = index === 0 || messages[index - 1].sender !== msg.sender;
-             
-             if (isSystem) {
+          <AnimatePresence initial={false}>
+            {messages.map((msg, index) => {
+               const isSystem = msg.sender === 'system';
+               const isMe = msg.sender === 'me';
+               const isFirstInGroup = index === 0 || messages[index - 1].sender !== msg.sender;
+               
+               if (isSystem) {
+                 return (
+                   <motion.div 
+                    key={msg.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex justify-center my-6"
+                   >
+                      <div className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-slate-800/80 border border-slate-700 backdrop-blur-md text-xs font-medium text-slate-400 shadow-sm">
+                        <AlertCircle className="w-3 h-3" />
+                        {msg.text}
+                      </div>
+                   </motion.div>
+                 );
+               }
+
                return (
-                 <div key={msg.id} className="flex justify-center my-6 animate-fade-in">
-                    <div className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-slate-800/80 border border-slate-700 backdrop-blur-md text-xs font-medium text-slate-400 shadow-sm">
-                      <AlertCircle className="w-3 h-3" />
+                <motion.div 
+                  key={msg.id} 
+                  initial={{ opacity: 0, x: isMe ? 20 : -20, scale: 0.95 }}
+                  animate={{ opacity: 1, x: 0, scale: 1 }}
+                  whileHover={{ 
+                    rotateY: isMe ? -5 : 5,
+                    z: 10,
+                    transition: { duration: 0.2 }
+                  }}
+                  style={{ perspective: 1000 }}
+                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                  className={`flex w-full group ${isMe ? 'justify-end' : 'justify-start'}`}
+                >
+                  <div className={`flex max-w-[85%] sm:max-w-[70%] ${isMe ? 'flex-row-reverse' : 'flex-row'} items-end gap-2`}>
+                     
+                     {/* Avatar for messages */}
+                     <div className={`w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center mb-1 ${!isFirstInGroup ? 'opacity-0' : 'opacity-100'} ${isMe ? 'bg-primary/20' : 'bg-slate-700'}`}>
+                        {isMe ? <div className="w-2 h-2 rounded-full bg-primary" /> : <User className="w-3 h-3 text-slate-400" />}
+                     </div>
+
+                     <div 
+                      className={`relative px-5 py-3.5 text-[15px] leading-relaxed shadow-md backdrop-blur-sm transition-all duration-200 hover:shadow-lg
+                        ${isMe 
+                          ? 'bg-gradient-to-br from-[#7c3aed] to-[#6d28d9] text-white rounded-2xl rounded-tr-sm border border-white/10' 
+                          : 'bg-[#1e293b]/80 border border-white/5 text-slate-100 rounded-2xl rounded-tl-sm hover:bg-[#1e293b]'
+                        }
+                      `}
+                    >
                       {msg.text}
-                    </div>
-                 </div>
-               );
-             }
-
-             return (
-              <div 
-                key={msg.id} 
-                className={`flex w-full group animate-slide-up ${isMe ? 'justify-end' : 'justify-start'}`}
-              >
-                <div className={`flex max-w-[85%] sm:max-w-[70%] ${isMe ? 'flex-row-reverse' : 'flex-row'} items-end gap-2`}>
-                   
-                   {/* Avatar for messages */}
-                   <div className={`w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center mb-1 ${!isFirstInGroup ? 'opacity-0' : 'opacity-100'} ${isMe ? 'bg-primary/20' : 'bg-slate-700'}`}>
-                      {isMe ? <div className="w-2 h-2 rounded-full bg-primary" /> : <User className="w-3 h-3 text-slate-400" />}
-                   </div>
-
-                   <div 
-                    className={`relative px-5 py-3.5 text-[15px] leading-relaxed shadow-md backdrop-blur-sm transition-all duration-200 hover:shadow-lg
-                      ${isMe 
-                        ? 'bg-gradient-to-br from-[#7c3aed] to-[#6d28d9] text-white rounded-2xl rounded-tr-sm border border-white/10' 
-                        : 'bg-[#1e293b]/80 border border-white/5 text-slate-100 rounded-2xl rounded-tl-sm hover:bg-[#1e293b]'
-                      }
-                    `}
-                  >
-                    {msg.text}
-                    <div className={`text-[10px] mt-1 font-medium opacity-0 group-hover:opacity-60 transition-opacity text-right absolute -bottom-5 ${isMe ? 'right-0 text-slate-400' : 'left-0 text-slate-500'}`}>
-                      {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      <div className={`text-[10px] mt-1 font-medium opacity-0 group-hover:opacity-60 transition-opacity text-right absolute -bottom-5 ${isMe ? 'right-0 text-slate-400' : 'left-0 text-slate-500'}`}>
+                        {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </div>
                     </div>
                   </div>
+                </motion.div>
+               );
+            })}
+          </AnimatePresence>
+          
+          <AnimatePresence>
+            {isPartnerTyping && !isPartnerDisconnected && (
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                className="flex w-full justify-start"
+              >
+                <div className="flex max-w-[85%] sm:max-w-[70%] flex-row items-end gap-2">
+                   <div className="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center mb-1 bg-slate-700">
+                      <User className="w-3 h-3 text-slate-400" />
+                   </div>
+                   <div className="relative px-5 py-4 bg-[#1e293b]/80 border border-white/5 rounded-2xl rounded-tl-sm flex items-center gap-1.5">
+                      <motion.div animate={{ y: [0, -5, 0] }} transition={{ repeat: Infinity, duration: 0.6, delay: 0 }} className="w-1.5 h-1.5 bg-slate-400 rounded-full"></motion.div>
+                      <motion.div animate={{ y: [0, -5, 0] }} transition={{ repeat: Infinity, duration: 0.6, delay: 0.2 }} className="w-1.5 h-1.5 bg-slate-400 rounded-full"></motion.div>
+                      <motion.div animate={{ y: [0, -5, 0] }} transition={{ repeat: Infinity, duration: 0.6, delay: 0.4 }} className="w-1.5 h-1.5 bg-slate-400 rounded-full"></motion.div>
+                   </div>
                 </div>
-              </div>
-             );
-          })}
+              </motion.div>
+            )}
+          </AnimatePresence>
           
-          {isPartnerTyping && !isPartnerDisconnected && (
-            <div className="flex w-full justify-start animate-fade-in">
-              <div className="flex max-w-[85%] sm:max-w-[70%] flex-row items-end gap-2">
-                 <div className="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center mb-1 bg-slate-700">
-                    <User className="w-3 h-3 text-slate-400" />
+          <AnimatePresence>
+            {isPartnerDisconnected && (
+              <motion.div 
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex flex-col items-center justify-center gap-6 py-12"
+              >
+                 <div className="relative">
+                   <div className="absolute inset-0 bg-rose-500/20 blur-xl rounded-full"></div>
+                   <div className="relative p-5 rounded-full bg-slate-900 border border-slate-800 shadow-2xl">
+                      <User className="w-10 h-10 text-slate-500" />
+                   </div>
                  </div>
-                 <div className="relative px-5 py-4 bg-[#1e293b]/80 border border-white/5 rounded-2xl rounded-tl-sm flex items-center gap-1.5">
-                    <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                    <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                    <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                 
+                 <div className="text-center space-y-1">
+                   <h4 className="text-lg font-bold text-white">Stranger disconnected</h4>
+                   <p className="text-slate-500 text-sm">The conversation has ended.</p>
                  </div>
-              </div>
-            </div>
-          )}
-          
-          {isPartnerDisconnected && (
-            <div className="flex flex-col items-center justify-center gap-6 py-12 animate-fade-in opacity-0" style={{ animationFillMode: 'forwards', animationDelay: '0.3s', animationName: 'fadeIn' }}>
-               <div className="relative">
-                 <div className="absolute inset-0 bg-rose-500/20 blur-xl rounded-full"></div>
-                 <div className="relative p-5 rounded-full bg-slate-900 border border-slate-800 shadow-2xl">
-                    <User className="w-10 h-10 text-slate-500" />
-                 </div>
-               </div>
-               
-               <div className="text-center space-y-1">
-                 <h4 className="text-lg font-bold text-white">Stranger disconnected</h4>
-                 <p className="text-slate-500 text-sm">The conversation has ended.</p>
-               </div>
 
-               <button 
-                 onClick={onNext}
-                 className="group relative px-8 py-3 bg-white text-black rounded-full text-sm font-bold shadow-[0_0_20px_rgba(255,255,255,0.3)] hover:shadow-[0_0_30px_rgba(255,255,255,0.5)] hover:scale-105 transition-all overflow-hidden"
-               >
-                 <span className="relative z-10 flex items-center gap-2">
-                   Find New Partner <SkipForward className="w-4 h-4" />
-                 </span>
-               </button>
-            </div>
-          )}
+                 <button 
+                   onClick={onNext}
+                   className="group relative px-8 py-3 bg-white text-black rounded-full text-sm font-bold shadow-[0_0_20px_rgba(255,255,255,0.3)] hover:shadow-[0_0_30px_rgba(255,255,255,0.5)] hover:scale-105 transition-all overflow-hidden"
+                 >
+                   <span className="relative z-10 flex items-center gap-2">
+                     Find New Partner <SkipForward className="w-4 h-4" />
+                   </span>
+                 </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
           <div ref={messagesEndRef} className="h-4" />
         </div>
 

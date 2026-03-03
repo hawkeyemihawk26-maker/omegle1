@@ -1,5 +1,6 @@
 import React from 'react';
-import { Zap, Wifi, WifiOff, TestTube } from 'lucide-react';
+import { Wifi, WifiOff, TestTube, MessageSquare } from 'lucide-react';
+import { motion } from 'motion/react';
 import { DEMO_MODE } from '../constants';
 
 interface HeaderProps {
@@ -11,12 +12,20 @@ export const Header: React.FC<HeaderProps> = ({ isConnected, onlineCount }) => {
   return (
     <header className="h-16 glass-header flex items-center justify-between px-4 sm:px-8 fixed top-0 w-full z-50">
       <div className="flex items-center gap-3">
-        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-lg shadow-primary/20">
-          <Zap className="w-5 h-5 text-white fill-current" />
-        </div>
+        <motion.div 
+          whileHover={{ 
+            rotateY: 180,
+            scale: 1.1,
+            transition: { duration: 0.6 }
+          }}
+          style={{ perspective: 1000 }}
+          className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-lg shadow-primary/20 cursor-pointer"
+        >
+          <MessageSquare className="w-5 h-5 text-white fill-current" />
+        </motion.div>
         <h1 className="text-lg font-bold tracking-tight">
           <span className="text-white">Omegle</span>
-          <span className="text-primary">Clone</span>
+          <span className="text-primary">Chat</span>
         </h1>
         {DEMO_MODE && (
            <span className="hidden sm:flex items-center gap-1.5 bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider">

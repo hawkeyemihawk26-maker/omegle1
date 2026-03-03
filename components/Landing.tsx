@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { UserPreferences, Gender } from '../types';
 import { Play, Plus, X, Globe2, Hash, WifiOff } from 'lucide-react';
 import { DEMO_MODE } from '../constants';
@@ -49,29 +50,64 @@ export const Landing: React.FC<LandingProps> = ({ onStart, isConnecting, isConne
     <div className="flex flex-col items-center justify-center min-h-screen pt-20 pb-10 px-4 sm:px-6">
       
       {/* Main Card */}
-      <div className="w-full max-w-5xl glass-panel rounded-[2rem] overflow-hidden shadow-2xl grid grid-cols-1 lg:grid-cols-5 min-h-[600px] border-glass-border">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        whileHover={{ 
+          rotateX: 2,
+          rotateY: -2,
+          transition: { duration: 0.3 }
+        }}
+        style={{ perspective: 1000 }}
+        transition={{ duration: 0.5, ease: "easeOut" }}
+        className="w-full max-w-5xl glass-panel rounded-[2rem] overflow-hidden shadow-2xl grid grid-cols-1 lg:grid-cols-5 min-h-[600px] border-glass-border"
+      >
         
         {/* Left Side: Branding */}
         <div className="lg:col-span-2 bg-gradient-to-br from-primary/10 via-background to-background p-10 flex flex-col justify-between relative overflow-hidden">
-          <div className="absolute top-0 right-0 p-10 opacity-20">
+          <motion.div 
+            animate={{ rotate: 360 }}
+            transition={{ duration: 60, repeat: Infinity, ease: "linear" }}
+            className="absolute top-0 right-0 p-10 opacity-20"
+          >
             <Globe2 className="w-64 h-64 text-primary" />
-          </div>
+          </motion.div>
           
           <div className="relative z-10">
-            <div className="inline-flex items-center gap-2 bg-white/5 border border-white/10 px-3 py-1 rounded-full text-xs font-medium text-primary mb-6">
+            <motion.div 
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.2 }}
+              className="inline-flex items-center gap-2 bg-white/5 border border-white/10 px-3 py-1 rounded-full text-xs font-medium text-primary mb-6"
+            >
               <span className="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
               Global Network
-            </div>
-            <h2 className="text-4xl font-bold text-white leading-tight mb-4">
+            </motion.div>
+            <motion.h2 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3 }}
+              className="text-4xl font-bold text-white leading-tight mb-4"
+            >
               Connect with <br/>
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-accent">Anyone, Anywhere.</span>
-            </h2>
-            <p className="text-slate-400 leading-relaxed">
+            </motion.h2>
+            <motion.p 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.4 }}
+              className="text-slate-400 leading-relaxed"
+            >
               Experience the next generation of random chat. Filter by interests, find your tribe, and start the conversation.
-            </p>
+            </motion.p>
           </div>
 
-          <div className="relative z-10 pt-10">
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.5 }}
+            className="relative z-10 pt-10"
+          >
             <div className="flex -space-x-3 mb-4">
               {[1,2,3,4].map(i => (
                 <div key={i} className="w-10 h-10 rounded-full border-2 border-background bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-500">
@@ -83,26 +119,33 @@ export const Landing: React.FC<LandingProps> = ({ onStart, isConnecting, isConne
               </div>
             </div>
             <p className="text-xs text-slate-500 font-medium uppercase tracking-widest">Users Online Now</p>
-          </div>
+          </motion.div>
         </div>
 
         {/* Right Side: Form */}
         <div className="lg:col-span-3 p-8 sm:p-12 bg-black/20 flex flex-col justify-center">
           
           {/* Server Offline Warning */}
-          {!isConnected && !DEMO_MODE && (
-            <div className="mb-6 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center gap-3 animate-fade-in">
-              <div className="w-8 h-8 rounded-full bg-rose-500/20 flex items-center justify-center flex-shrink-0">
-                <WifiOff className="w-4 h-4 text-rose-500" />
-              </div>
-              <div className="flex-1">
-                <h4 className="text-sm font-bold text-rose-400">Connection Lost</h4>
-                <p className="text-[11px] text-slate-400 leading-tight">
-                  Could not connect to Supabase Realtime. Please check your internet connection.
-                </p>
-              </div>
-            </div>
-          )}
+          <AnimatePresence>
+            {!isConnected && !DEMO_MODE && (
+              <motion.div 
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="mb-6 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center gap-3 overflow-hidden"
+              >
+                <div className="w-8 h-8 rounded-full bg-rose-500/20 flex items-center justify-center flex-shrink-0">
+                  <WifiOff className="w-4 h-4 text-rose-500" />
+                </div>
+                <div className="flex-1">
+                  <h4 className="text-sm font-bold text-rose-400">Connection Lost</h4>
+                  <p className="text-[11px] text-slate-400 leading-tight">
+                    Could not connect to Supabase Realtime. Please check your internet connection.
+                  </p>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <div className="space-y-8">
             
@@ -180,22 +223,32 @@ export const Landing: React.FC<LandingProps> = ({ onStart, isConnecting, isConne
               </div>
               
               <div className="flex flex-wrap gap-2 min-h-[30px]">
-                {interests.map((interest) => (
-                  <span key={interest} className="inline-flex items-center gap-1.5 bg-primary/10 text-primary text-xs font-bold px-3 py-1.5 rounded-lg border border-primary/20 animate-fade-in">
-                    <Hash className="w-3 h-3 opacity-50" />
-                    {interest}
-                    <button onClick={() => removeInterest(interest)} className="hover:text-white transition-colors ml-1">
-                      <X className="w-3 h-3" />
-                    </button>
-                  </span>
-                ))}
+                <AnimatePresence>
+                  {interests.map((interest) => (
+                    <motion.span 
+                      key={interest} 
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.8 }}
+                      className="inline-flex items-center gap-1.5 bg-primary/10 text-primary text-xs font-bold px-3 py-1.5 rounded-lg border border-primary/20"
+                    >
+                      <Hash className="w-3 h-3 opacity-50" />
+                      {interest}
+                      <button onClick={() => removeInterest(interest)} className="hover:text-white transition-colors ml-1">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </motion.span>
+                  ))}
+                </AnimatePresence>
               </div>
             </div>
 
-            <button
+            <motion.button
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.99 }}
               onClick={handleStart}
               disabled={isConnecting || (!isConnected && !DEMO_MODE)}
-              className="w-full group relative mt-4 overflow-hidden rounded-xl bg-gradient-to-r from-primary to-secondary p-[1px] transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 disabled:pointer-events-none"
+              className="w-full group relative mt-4 overflow-hidden rounded-xl bg-gradient-to-r from-primary to-secondary p-[1px] transition-all disabled:opacity-50 disabled:pointer-events-none"
             >
               <div className="relative h-full w-full bg-slate-900/40 rounded-xl px-8 py-4 transition-all group-hover:bg-opacity-0">
                 <div className="flex items-center justify-center gap-2 font-bold text-white tracking-wide uppercase">
@@ -211,11 +264,11 @@ export const Landing: React.FC<LandingProps> = ({ onStart, isConnecting, isConne
                   )}
                 </div>
               </div>
-            </button>
+            </motion.button>
 
           </div>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 };

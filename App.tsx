@@ -1,7 +1,9 @@
 import { useEffect, useState, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { Header } from './components/Header';
 import { Landing } from './components/Landing';
 import { ChatRoom } from './components/ChatRoom';
+import { soundService } from './services/soundService';
 import { 
   joinQueue, 
   leaveQueue, 
@@ -37,6 +39,8 @@ function App() {
   });
   const [currentMatch, setCurrentMatch] = useState<Match | null>(null);
   const matchChannelRef = useRef<any>(null);
+  const statusChannelRef = useRef<any>(null);
+  const processedMatchIdRef = useRef<string | null>(null);
   const searchIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Initialize Presence for Online Count
@@ -77,22 +81,41 @@ function App() {
 
   // Handle Match Found (via Subscription or Polling)
   const handleMatchFound = async (match: Match) => {
+    // Prevent duplicate match handling
+    if (processedMatchIdRef.current === match.id) return;
+    processedMatchIdRef.current = match.id;
+
+    console.log('Initializing match:', match.id);
+    soundService.play('match');
+
     // Clear search interval
     if (searchIntervalRef.current) {
       clearInterval(searchIntervalRef.current);
       searchIntervalRef.current = null;
     }
 
+    // Cleanup any existing channels before starting new ones
+    if (matchChannelRef.current) {
+      supabase.removeChannel(matchChannelRef.current);
+      matchChannelRef.current = null;
+    }
+    if (statusChannelRef.current) {
+      supabase.removeChannel(statusChannelRef.current);
+      statusChannelRef.current = null;
+    }
+
     // Determine if I am host or peer
     const isHost = match.host_id === userId;
     const partnerId = isHost ? match.peer_id : match.host_id;
+    const partnerName = isHost ? match.peer_name : match.host_name;
+    const partnerGender = isHost ? match.peer_gender : match.host_gender;
 
     setCurrentMatch(match);
     setPartner({
       socketId: partnerId,
-      displayName: 'Stranger', // We don't store names in DB for privacy, just IDs
-      interests: [], // We could store interests in the match/queue table if needed
-      gender: 'Unknown'
+      displayName: partnerName || 'Stranger', 
+      interests: [], 
+      gender: partnerGender || 'Unknown'
     });
     setAppState('chatting');
     setMessages([]);
@@ -112,6 +135,7 @@ function App() {
           }
         ]);
         setIsPartnerTyping(false);
+        soundService.play('message');
       }
     }, (payload: any) => {
       if (payload.senderId !== userId) {
@@ -125,8 +149,9 @@ function App() {
     matchChannelRef.current = channel;
 
     // Subscribe to match status (for disconnection)
-    subscribeToMatchStatus(match.id, () => {
+    const statusChannel = subscribeToMatchStatus(match.id, () => {
       setIsPartnerDisconnected(true);
+      soundService.play('disconnect');
       setMessages(prev => [
         ...prev,
         {
@@ -141,7 +166,12 @@ function App() {
         supabase.removeChannel(matchChannelRef.current);
         matchChannelRef.current = null;
       }
+      if (statusChannelRef.current) {
+        supabase.removeChannel(statusChannelRef.current);
+        statusChannelRef.current = null;
+      }
     });
+    statusChannelRef.current = statusChannel;
   };
 
   // Subscribe to being matched
@@ -165,13 +195,13 @@ function App() {
     setCurrentMatch(null);
 
     // 1. Join Queue
-    await joinQueue(userId, prefs.interests);
+    await joinQueue(userId, prefs.interests, prefs.displayName, prefs.gender);
 
     // 2. Start Polling for Matches (Active Search)
     if (searchIntervalRef.current) clearInterval(searchIntervalRef.current);
     
     searchIntervalRef.current = setInterval(async () => {
-      const match = await findAndClaimMatch(userId, prefs.interests);
+      const match = await findAndClaimMatch(userId, prefs.interests, prefs.displayName, prefs.gender);
       if (match) {
         console.log('Match found via active search:', match);
         handleMatchFound(match);
@@ -201,12 +231,17 @@ function App() {
   };
 
   const handleNext = async () => {
+    processedMatchIdRef.current = null;
     // End current match if exists
     if (currentMatch) {
       await endMatch(currentMatch.id);
       if (matchChannelRef.current) {
         supabase.removeChannel(matchChannelRef.current);
         matchChannelRef.current = null;
+      }
+      if (statusChannelRef.current) {
+        supabase.removeChannel(statusChannelRef.current);
+        statusChannelRef.current = null;
       }
     }
     
@@ -226,12 +261,17 @@ function App() {
   };
 
   const handleStop = async () => {
+    processedMatchIdRef.current = null;
     // End current match if exists
     if (currentMatch) {
       await endMatch(currentMatch.id);
       if (matchChannelRef.current) {
         supabase.removeChannel(matchChannelRef.current);
         matchChannelRef.current = null;
+      }
+      if (statusChannelRef.current) {
+        supabase.removeChannel(statusChannelRef.current);
+        statusChannelRef.current = null;
       }
     }
 
@@ -271,53 +311,84 @@ function App() {
         <Header isConnected={isConnected} onlineCount={onlineCount} />
 
         <main className="flex-1 flex flex-col">
-          {appState === 'landing' && (
-            <Landing 
-              onStart={handleStartSearch} 
-              isConnecting={false} 
-              isConnected={isConnected}
-            />
-          )}
-
-          {appState === 'searching' && (
-            <div className="flex-1 flex flex-col items-center justify-center p-4">
-              <div className="relative mb-12">
-                <div className="absolute inset-0 bg-primary/20 rounded-full blur-xl animate-pulse-glow"></div>
-                <div className="relative w-24 h-24 glass-panel rounded-full flex items-center justify-center border border-primary/30">
-                  <Loader2 className="w-10 h-10 text-primary animate-spin" />
-                </div>
-                {/* Radar Ripples */}
-                <div className="absolute inset-0 rounded-full border border-primary/20 animate-ping opacity-20"></div>
-              </div>
-              
-              <h2 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary mb-3 animate-fade-in">
-                Scanning Frequency...
-              </h2>
-              <p className="text-slate-400 max-w-md text-center animate-slide-up mb-6">
-                Looking for someone interested in <span className="text-slate-200 font-medium">{userPreferences.current?.interests.join(', ') || 'anything'}</span>
-              </p>
-              
-              <button 
-                onClick={handleStop}
-                className="px-6 py-2 rounded-full border border-white/10 hover:bg-white/5 text-slate-400 hover:text-white transition-colors text-sm font-medium"
+          <AnimatePresence mode="wait">
+            {appState === 'landing' && (
+              <motion.div
+                key="landing"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.3 }}
+                className="flex-1 flex flex-col"
               >
-                Cancel Search
-              </button>
-            </div>
-          )}
+                <Landing 
+                  onStart={handleStartSearch} 
+                  isConnecting={false} 
+                  isConnected={isConnected}
+                />
+              </motion.div>
+            )}
 
-          {appState === 'chatting' && partner && (
-            <ChatRoom 
-              partner={partner}
-              messages={messages}
-              onSendMessage={handleSendMessage}
-              onNext={handleNext}
-              onStop={handleStop}
-              isPartnerDisconnected={isPartnerDisconnected}
-              isPartnerTyping={isPartnerTyping}
-              onTyping={handleTyping}
-            />
-          )}
+            {appState === 'searching' && (
+              <motion.div
+                key="searching"
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 1.05 }}
+                transition={{ duration: 0.4 }}
+                className="flex-1 flex flex-col items-center justify-center p-4"
+              >
+                <div className="relative mb-12">
+                  <div className="absolute inset-0 bg-primary/20 rounded-full blur-xl animate-pulse-glow"></div>
+                  <motion.div 
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
+                    className="relative w-24 h-24 glass-panel rounded-full flex items-center justify-center border border-primary/30"
+                  >
+                    <Loader2 className="w-10 h-10 text-primary animate-spin" />
+                  </motion.div>
+                  {/* Radar Ripples */}
+                  <div className="absolute inset-0 rounded-full border border-primary/20 animate-ping opacity-20"></div>
+                </div>
+                
+                <h2 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary mb-3">
+                  Scanning Frequency...
+                </h2>
+                <p className="text-slate-400 max-w-md text-center mb-6">
+                  Looking for someone interested in <span className="text-slate-200 font-medium">{userPreferences.current?.interests.join(', ') || 'anything'}</span>
+                </p>
+                
+                <button 
+                  onClick={handleStop}
+                  className="px-6 py-2 rounded-full border border-white/10 hover:bg-white/5 text-slate-400 hover:text-white transition-colors text-sm font-medium"
+                >
+                  Cancel Search
+                </button>
+              </motion.div>
+            )}
+
+            {appState === 'chatting' && partner && (
+              <motion.div
+                key="chatting"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.4 }}
+                className="flex-1 flex flex-col"
+              >
+                <ChatRoom 
+                  partner={partner}
+                  messages={messages}
+                  onSendMessage={handleSendMessage}
+                  onNext={handleNext}
+                  onStop={handleStop}
+                  isPartnerDisconnected={isPartnerDisconnected}
+                  isPartnerTyping={isPartnerTyping}
+                  onTyping={handleTyping}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
         </main>
       </div>
     </div>
